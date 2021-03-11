@@ -4,8 +4,8 @@ set_time_limit(0);// 设置超时时间为无限,防止超时
 date_default_timezone_set('Asia/shanghai');
 
 class WebSocket {
-    const LOG_PATH = '/tmp/';
-    const LISTEN_SOCKET_NUM = 9;
+    const LOG_PATH = './tmp/';
+    const LISTEN_SOCKET_NUM = 900;
 
     /**
      * @var array $sockets
@@ -18,6 +18,7 @@ class WebSocket {
      */
     private $sockets = [];
     private $master;
+    private $clientSocket = null;
 
     public function __construct($host, $port) {
         try {
@@ -28,7 +29,7 @@ class WebSocket {
             socket_bind($this->master, $host, $port);
             // listen函数使用主动连接套接口变为被连接套接口，使得一个进程可以接受其它进程的请求，从而成为一个服务器进程。在TCP服务器编程中listen函数把进程变为一个服务器，并指定相应的套接字变为被动连接,其中的能存储的请求不明的socket数目。
             socket_listen($this->master, self::LISTEN_SOCKET_NUM);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             $err_code = socket_last_error();
             $err_msg = socket_strerror($err_code);
 
@@ -40,13 +41,13 @@ class WebSocket {
         }
 
         $this->sockets[0] = ['resource' => $this->master];
-        $pid = posix_getpid();
+        $pid = getmypid();
         $this->debug(["server: {$this->master} started,pid: {$pid}"]);
 
         while (true) {
             try {
                 $this->doServer();
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 $this->error([
                     'error_do_server',
                     $e->getCode(),
@@ -263,15 +264,18 @@ class WebSocket {
 
         switch ($msg_type) {
             case 'login':
-                $this->sockets[(int)$socket]['uname'] = $msg_content;
-                // 取得最新的名字记录
-                $user_list = array_column($this->sockets, 'uname');
+                $this->sockets[(int)$socket]['uname'] = $msg_content;                	// 取得最新的名字记录
+//                $user_list = array_filter(array_column($this->sockets, 'uname'));	//去除多余的空项
+                $user_list = array_column($this->sockets, 'uname');	//去除多余的空项
                 $response['type'] = 'login';
                 $response['content'] = $msg_content;
                 $response['user_list'] = $user_list;
                 break;
             case 'logout':
+//                $user_list = array_filter(array_column($this->sockets, 'uname'));
                 $user_list = array_column($this->sockets, 'uname');
+                //print_r(array_filter(array_column($this->sockets, 'uname')));
+
                 $response['type'] = 'logout';
                 $response['content'] = $msg_content;
                 $response['user_list'] = $user_list;
@@ -293,11 +297,15 @@ class WebSocket {
      * @param $data
      */
     private function broadcast($data) {
+    //echo "\r\nsockets\r\n";
+    //print_r($this->sockets);
+    //echo "\r\nmaster\r\n";
+    //print_r($this->master);
         foreach ($this->sockets as $socket) {
-            if ($socket['resource'] == $this->master) {
-                continue;
+            if ($socket['resource'] != $this->master) {				//直接排除主监听socket
+               socket_write($socket['resource'], $data, strlen($data));
+    		//             continue;
             }
-            socket_write($socket['resource'], $data, strlen($data));
         }
     }
 
@@ -328,4 +336,6 @@ class WebSocket {
     }
 }
 
-$ws = new WebSocket("127.0.0.1", "8080");
+include("../include/config.inc.php");
+
+$ws = new WebSocket($WSSERVER, "8080");
