@@ -9,6 +9,7 @@
             padding-left: 20px;
         }
     </style>
+    <script src=jquery.js></script>
 </head>
 <body>
 <div style="width: 800px;height: 600px;margin: 30px auto;text-align: center">
@@ -24,7 +25,7 @@
         </div>
     </div>
     <br>
-    <textarea id="msg_box" rows="6" cols="50" onkeydown="confirm(event)"></textarea><br>
+    <textarea id="msg_box" rows="6" cols="50" onkeydown="confirmSending(event)"></textarea><br>
     <input type="button" value="发送" onclick="send()">
 </div>
 </body>
@@ -33,32 +34,79 @@
 <script type="text/javascript">
     // 存储用户名到全局变量,握手成功后发送给服务器
     var uname = prompt('请输入用户名', 'user' + uuid(8, 16));
-    var ws = new WebSocket("ws://127.0.0.1:8080");//这里的IP地址，可以单独放在PHP中。参看server.php末尾注释。
-    ws.onopen = function () {
-        var data = "系统消息：建立连接成功";
+var heartBeatTime = 180;				//一分钟一次
+
+   
+   var strWebSocketServerURL="ws://127.0.0.1:8081";
+   createWebSocket(strWebSocketServerURL);
+
+function reconnect(url) {
+    if (reconnect.lockReconnect) return;
+    setTimeout(function () {     			//没连接上会一直重连，设置延迟避免请求过多
+        createWebSocket(url);
+        reconnect.lockReconnect = false;
+    }, 1000);
+}
+
+// 实例websocket
+function createWebSocket(url) {
+    try {
+        if ('WebSocket' in window) {
+            ws = new WebSocket(url);
+        } else if ('MozWebSocket' in window) {
+            ws = new MozWebSocket(url);
+        } else {
+            _alert("当前浏览器不支持websocket协议,建议使用现代浏览器", 3000)
+        }
+        initEventHandle();
+    } catch (e) {
+        reconnect(url);
+    }
+}
+
+// 初始化事件函数
+function initEventHandle() {
+    ws.onclose = function () {
+        var d = new Date();
+        var n = d.toLocaleTimeString();
+        var data = "系统消息 (" + n + "): 已退出。";
         listMsg(data);
+        reconnect.lockReconnect = false;
+        reconnect(strWebSocketServerURL);
     };
-
-    /**
-     * 分析服务器返回信息
-     *
-     * msg.type : user 普通信息;system 系统信息;handshake 握手信息;login 登陆信息; logout 退出信息;
-     * msg.from : 消息来源
-     * msg.content: 消息内容
-     */
-    ws.onmessage = function (e) {
-        var msg = JSON.parse(e.data);
+    ws.onerror = function (err) {
+        $.post("websocket.php?t=" + Math.random(), {});//启动远程服务
+        var d = new Date();
+        var n = d.toLocaleTimeString();
+        var data = "系统消息 (" + n + ")+: 出错了，正在尝试重新运行服务，请稍候。";
+        listMsg(data);
+        reconnect.lockReconnect = false;
+        reconnect(strWebSocketServerURL);
+    };
+    ws.onopen = function () {
+        var d = new Date();
+        var n = d.toLocaleTimeString();
+        var data = "系统消息 (" + n + ")：建立连接成功。";
+        listMsg(data);
+        reconnect.lockReconnect = true;
+        heartCheck.reset().start();      		//心跳检测重置
+    };
+    ws.onmessage = function (msg) {    		//如果获取到消息，心跳检测重置
+        var msg = JSON.parse(msg.data);
         var sender, user_name, name_list, change_type;
+        var d = new Date();
+        var n = d.toLocaleTimeString();
 
+        heartCheck.reset().start();      		//拿到任何消息都说明当前连接是正常的
         switch (msg.type) {
             case 'system':
-                sender = '系统消息: ';
+                sender = "系统消息(" + n + ")+: ";
                 break;
             case 'user':
-                sender = msg.from + ': ';
+                sender = msg.from + "(" + n + ")" + ': ';
                 break;
             case 'handshake':
-                var user_info = {'type': 'login', 'content': uname};
+                var user_info = { 'type': 'login', 'content': uname };
                 sendMsg(user_info);
                 return;
             case 'login':
@@ -69,36 +117,41 @@
                 dealUser(user_name, change_type, name_list);
                 return;
         }
-
         var data = sender + msg.content;
-        listMsg(data);
+        listMsg(data);						//将接收到的数据显示在消息列表里
     };
+}
 
-    ws.onerror = function () {
-        $.post("server.php?t=" + Math.random(), {});//自动启动server服务。这里需要另外加jquery.js。
-        var d = new Date();
-        var n = d.toLocaleTimeString();
-        var data = "系统消息 (" + n + ")+: 出错了，正在尝试重新运行服务，请稍候。";
-        listMsg(data);
-        reconnect.lockReconnect = false;
-        reconnect(strWebSocketServerURL);
-    };
-
-    /**
-     * 在输入框内按下回车键时发送消息
-     *
-     * @param event
-     *
-     * @returns {boolean}
-     */
-    function confirm(event) {
-        var key_num = event.keyCode;
-        if (13 == key_num) {
-            send();
-        } else {
-            return false;
-        }
+var heartCheck = {
+    timeout: heartBeatTime * 1000,  			//  心跳检测时长
+    timeoutObj: null, 				// 定时变量
+    reset: function () { 				// 重置定时
+        clearTimeout(this.timeoutObj);
+        return this;
+    },
+    start: function () { 				// 开启定时
+        var self = this;
+        this.timeoutObj = setTimeout(function () { 	// 心跳时间内收不到消息，主动触发连接关闭，开始重连
+            ws.close();
+        }, this.timeout)
     }
+}
+
+/**
+ * 在输入框内按下回车键时发送消息
+ *
+ * @param event
+ *
+ * @returns {boolean}
+ */
+function confirmSending(event) { //原本用的名字是js内部的保留字confirm，会起冲突，所以改掉了。
+    var key_num = event.keyCode;
+    if (13 == key_num) {
+        send();
+    } else {
+        return false;
+    }
+}
 
     /**
      * 发送并清空消息输入框内的消息

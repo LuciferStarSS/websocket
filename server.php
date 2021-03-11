@@ -339,4 +339,4 @@ class WebSocket {
 //include("../include/config.inc.php");
 //这里主要定义了：
 $WSSERVER="127.0.0.1";
-$ws = new WebSocket($WSSERVER, "8080");
+$ws = new WebSocket($WSSERVER, "8081");
