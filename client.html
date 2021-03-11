@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
     <title></title>
@@ -33,7 +33,7 @@
 <script type="text/javascript">
     // 存储用户名到全局变量,握手成功后发送给服务器
     var uname = prompt('请输入用户名', 'user' + uuid(8, 16));
-    var ws = new WebSocket("ws://127.0.0.1:8080");
+    var ws = new WebSocket("ws://127.0.0.1:8080");//这里的IP地址，可以单独放在PHP中。参看server.php末尾注释。
     ws.onopen = function () {
         var data = "系统消息：建立连接成功";
         listMsg(data);
@@ -75,8 +75,13 @@
     };
 
     ws.onerror = function () {
-        var data = "系统消息 : 出错了,请退出重试.";
+        $.post("server.php?t=" + Math.random(), {});//自动启动server服务。这里需要另外加jquery.js。
+        var d = new Date();
+        var n = d.toLocaleTimeString();
+        var data = "系统消息 (" + n + ")+: 出错了，正在尝试重新运行服务，请稍候。";
         listMsg(data);
+        reconnect.lockReconnect = false;
+        reconnect(strWebSocketServerURL);
     };
 
     /**
@@ -131,9 +136,13 @@
     function dealUser(user_name, type, name_list) {
         var user_list = document.getElementById("user_list");
         var user_num = document.getElementById("user_num");
-        while(user_list.hasChildNodes()) {
-            user_list.removeChild(user_list.firstChild);
-        }
+        user_list.innerHTML='';
+        //while(user_list.hasChildNodes()) {
+        //    user_list.removeChild(user_list.firstChild);
+        //}
+
+        name_list=name_list.filter(function(s){return s && s.trim();});//去掉空项
+        name_list.sort();//排序
 
         for (var index in name_list) {
             var user = document.createElement("p");
@@ -145,7 +154,11 @@
 
         var change = type == 'login' ? '上线' : '下线';
 
-        var data = '系统消息: ' + user_name + ' 已' + change;
+        var d = new Date();
+        var n = d.toLocaleTimeString();
+
+        var data = "系统消息(" + n + "): " + user_name + " 已" + change;
+
         listMsg(data);
     }
 

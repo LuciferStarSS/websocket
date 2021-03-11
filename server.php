@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 error_reporting(E_ALL);
 set_time_limit(0);// 设置超时时间为无限,防止超时
 date_default_timezone_set('Asia/shanghai');
@@ -336,6 +336,7 @@ class WebSocket {
     }
 }
 
-include("../include/config.inc.php");
-
+//include("../include/config.inc.php");
+//这里主要定义了：
+$WSSERVER="127.0.0.1";
 $ws = new WebSocket($WSSERVER, "8080");
